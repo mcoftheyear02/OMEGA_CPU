@@ -1,0 +1,139 @@
+import os
+import zipfile
+
+# ==============================================================================
+# STRUCTURE ET CONTENU DES FICHIERS DU PROJET FXION OMEGA
+# ==============================================================================
+PROJECT_FILES = {
+    "README.md": """# FXION OMEGA - QZERO_CPU_16T_BINARY_FUSION
+Version: 8.712 FXIONBTC OMEGA INFINITY GENESIS IQ999+
+
+## 🎯 Objectif
+Architecture d'inférence neuronale CPU haute performance, optimisée pour le Ryzen 7 3800X (16T) et le SSD NVMe SN800. 
+Le GPU est utilisé **uniquement** comme extension de cache PCIe (L4 Way Link) pour la décompression QINT2, garantissant une stabilité ISO FPS et une sécurité L0/L1/L2 totale.
+
+## ⚙️ Caractéristiques Clés
+- **100% CPU Optimized** : 16 Threads dédiés, affinité CCX, Numba JIT pour la déquantification QINT2.
+- **Ratio Stable** : Application stricte du facteur `0.625` (Cercle d'Or) à chaque passe.
+- **PCIe Double Link** : Exclusion mutuelle stricte (Lien A ou Lien B, jamais les deux simultanément) pour éviter la contention.
+- **Sécurité L0/L1/L2** : Aurora (Contrôle d'accès), Oberon BoarShield (HMAC-SHA3-512, rotation 1ms), Security AI (Détection d'anomalies Z-Score asynchrone).
+- **Époque Fibonacci** : Intégration de l'entropie de l'époque 4272.
+
+## 📁 Structure
+- `src/` : Code source principal (Moteur neuronal, Sécurité, Pipeline).
+- `bin/` : Scripts d'activation et d'automatisation (Windows/Linux).
+- `config/` : Fichiers de configuration JSON.
+- `docs/` : Documentation et manifestes de checksums.
+
+## 🚀 Installation & Activation (Windows 10/11)
+1. Installez Python 3.8+ et cochez "Add to PATH".
+2. Installez les dépendances : `pip install -r requirements.txt`
+3. Exécutez en tant qu'Administrateur : `bin\\FXION_OMEGA_ACTIVATE.bat`
+""",
+
+    "requirements.txt": """numpy>=1.21.0
+numba>=0.56.0
+""",
+
+    "config/aurora_security.json": """{
+    "module": "AURORA_SECURITY",
+    "mode": "SAFE_LOCAL",
+    "hmac": "SHA3-512",
+    "allow_remote": false,
+    "block_fake_balance": true,
+    "block_unsigned_transfer": true,
+    "localhost_only": true
+}""",
+
+    "config/vrm_config.json": """{
+    "memory_mode": "adaptive",
+    "vector_cache": true,
+    "semantic_mapping": true,
+    "spatial_context": true,
+    "recovery": true
+}""",
+
+    "src/fxion_omega_core.py": """\"\"\"
+MODULE ULTIME : FXION_OMEGA_ALL_IN_ONE_BEST_PARAMETRE
+Version: 8.712 FXIONBTC OMEGA INFINITY GENESIS IQ999+
+Cible : B550 AORUS MASTER + Ryzen 7 3800X (8C/16T) + SN800 7000MB/s
+Contraintes : CPU 16T Only, GPU=PCIe Cache Way Link (L4), QINT2 JIT Numba, 
+              Ratio 0.625, ISO FPS, Exclusion Mutuelle PCIe, Security AI Async.
+\"\"\"
+import os, time, json, hmac, hashlib, math, logging, statistics, threading
+import numpy as np
+from queue import Queue
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List, Optional, Tuple, Any, Callable
+from datetime import datetime
+from collections import deque
+from dataclasses import dataclass
+from enum import Enum
+from numba import njit
+
+logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(threadName)s] %(message)s")
+logger = logging.getLogger("FXION_OMEGA_AIO")
+
+class FXION_CONFIG:
+    MAX_CPU_THREADS = 16
+    GOLDEN_RATIO_STABLE = np.float32(0.625)
+    FIBONACCI_EPOCH = 4272
+    SECURITY_BATCH_SIZE = 50
+    EFFECTIVE_PCIE_GBPS = (15.75 * 0.80) * 4.0  # ~50.4 GB/s équivalent QINT2
+    AURORA = {"localhost_only": True, "block_unsigned_transfer": True, "block_fake_balance": True}
+    QFX_PROFILES = {
+        "QINT2":  {"family": "IQ", "accuracy": 0.840, "vram_gb": 0.95, "base_tps": 214.7, "prior": 0.06},
+        "IQ4_NL": {"family": "IQ", "accuracy": 0.975, "vram_gb": 2.05, "base_tps": 166.2, "prior": 0.11},
+        "Q8_0":   {"family": "K",  "accuracy": 0.991, "vram_gb": 3.82, "base_tps": 128.4, "prior": 0.15}
+    }
+
+QINT2_LOOKUP = np.array([-3.0, -1.0, 1.0, 3.0], dtype=np.float32)
+
+@njit(fastmath=True, cache=True)
+def dequantize_block_jit_numba(packed_data: np.ndarray, scale: float, count: int) -> np.ndarray:
+    out = np.empty(count, dtype=np.int8)
+    ratio = FXION_CONFIG.GOLDEN_RATIO_STABLE
+    for i in range(count):
+        byte_idx = i >> 2
+        shift = 6 - (i & 3) * 2
+        bits_val = (packed_data[byte_idx] >> shift) & 0b11
+        q_val = QINT2_LOOKUP[bits_val]
+        final_val = q_val * scale * ratio
+        if final_val > 127.0: out[i] = 127
+        elif final_val < -128.0: out[i] = -128
+        else: out[i] = np.int8(np.round(final_val))
+    return out
+
+def pack_bits_qint2_fast(bits_list: List[str]) -> bytes:
+    out = bytearray()
+    acc, n = 0, 0
+    for b in bits_list:
+        acc = (acc << 2) | int(b, 2)
+        n += 2
+        if n == 8:
+            out.append(acc)
+            acc, n = 0, 0
+    if n: out.append(acc << (8 - n))
+    return bytes(out)
+
+class QFXOptimizer:
+    def __init__(self):
+        self.quants = list(FXION_CONFIG.QFX_PROFILES.keys())
+        self.counts = {q: 0 for q in self.quants}
+        self.rewards = {q: 0.0 for q in self.quants}
+        self.t = 0
+    def select_best_quant(self) -> str:
+        self.t += 1
+        for q in self.quants:
+            if self.counts[q] == 0: return q
+        scores = {}
+        for q in self.quants:
+            exploit = self.rewards[q] / self.counts[q]
+            explore = math.sqrt(2 * math.log(self.t) / self.counts[q])
+            vram_eff = max(0.0, 1.0 - (FXION_CONFIG.QFX_PROFILES[q]["vram_gb"] / 4.0))
+            aug = FXION_CONFIG.QFX_PROFILES[q]["prior"] + (0.04 * vram_eff if FXION_CONFIG.QFX_PROFILES[q]["family"] == "IQ" else 0.0)
+            scores[q] = exploit + explore + aug
+        return max(scores, key=scores.__getitem__)
+    def record_reward(self, quant: str, tps: float):
+        acc = FXION_CONFIG.QFX_PROFILES[quant]["accuracy"]
+        spd = min(tps / 200
